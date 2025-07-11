@@ -1,0 +1,121 @@
+﻿// Number of emails
+EmailEvent
+| count
+
+//Number of unique recipients (employees)
+EmailEvent
+| summarize DistinctRecipients = dcount(RecipientEmailAddress)
+
+
+// Email by Delivery Location
+EmailEvent
+| summarize EmailCount = count() by LatestDeliveryLocation
+| sort by EmailCount desc
+
+
+//% breakdown of delivery locations
+let totalEmails = toscalar(EmailEvent | summarize total=count());
+EmailEvent
+| summarize CountByLocation = count() by LatestDeliveryLocation
+| extend Percentage = todouble(CountByLocation) * 100 / totalEmails
+| sort by CountByLocation desc
+
+
+// count of inbound, outbound, internal 
+EmailEvent
+| summarize EmailCount = count() by EmailDirection
+| sort by EmailCount desc
+
+
+// Percentage of each direction
+let totalEmails = toscalar(EmailEvent | summarize total=count());
+EmailEvent
+| summarize CountByDirection = count() by EmailDirection
+| extend Percentage = todouble(CountByDirection) * 100 / totalEmails
+| sort by CountByDirection desc
+
+
+//  The Key Join
+EmailEvent
+| join kind=inner (
+    UrlClickEvent
+) on NetworkMessageId
+
+
+// list senders to John Doe
+EmailEvent
+| where RecipientEmailAddress == "john.doe@wheelsanddeals24.com"
+| project Timestamp, SenderFromAddress, SenderDisplayName, Subject, AttachmentCount
+| sort by Timestamp asc
+
+
+//  attachment frequency
+EmailEvent
+| summarize TotalEmails = count(), EmailsWithAttachments = countif(AttachmentCount > 0)
+| extend AttachmentFrequencyPercent = todouble(EmailsWithAttachments) * 100 / TotalEmails
+
+//check if Peter sent any emails with URLs to John
+EmailEvent
+| where SenderFromAddress == "peter.white@wheelsanddeals24.com"
+      and RecipientEmailAddress == "john.doe@wheelsanddeals24.com"
+| join kind=inner (
+    UrlClickEvent
+    | project NetworkMessageId, Url, Timestamp
+) on NetworkMessageId
+| project EmailTime = Timestamp, SenderFromAddress, RecipientEmailAddress, Url
+| sort by EmailTime asc
+
+
+//list Peter’s sender IPs, recipients, and delivery locations
+EmailEvent
+| where SenderFromAddress == "peter.white@wheelsanddeals24.com"
+| project Timestamp, SenderIPv4, RecipientEmailAddress, DeliveryLocation, Subject, AttachmentCount
+| sort by Timestamp asc
+
+
+//Check if Peter sent emails with attachments or URL to other recipients
+EmailEvent
+| where SenderFromAddress == "peter.white@wheelsanddeals24.com"
+| join kind=leftouter (
+    UrlClickEvent
+) on NetworkMessageId
+| project Timestamp, RecipientEmailAddress, Subject, Url, Workload, NetworkMessageId, AttachmentCount
+| sort by Timestamp asc
+
+//Look for obvious suspicious indicators in URLs
+UrlClickEvent
+| where Url has_any ("update", "login", "secure", "reset", "verify", "account")
+| project Timestamp, AccountUpn, Url, Workload, NetworkMessageId
+| sort by Timestamp asc
+
+
+// Checking the file attachments type by using AdditionalFields
+EmailEvent
+| where SenderFromAddress == "peter.white@wheelsanddeals24.com"
+| where AttachmentCount > 0
+| project Timestamp, RecipientEmailAddress, Subject, AdditionalFields
+
+//Peter’s recipients & times
+EmailEvent
+| where SenderFromAddress == "peter.white@wheelsanddeals24.com"
+| where AttachmentCount > 0
+| project RecipientEmailAddress, AttachmentTime = Timestamp
+
+//identify all users who received attachments from `peter.white@wheelsanddeals24.com` and checked whether they sent any emails immediately afterward
+EmailEvent
+| where SenderFromAddress in (
+    EmailEvent
+    | where SenderFromAddress == "peter.white@wheelsanddeals24.com"
+    | where AttachmentCount > 0
+    | project RecipientEmailAddress
+)
+| project Timestamp, SenderFromAddress, RecipientEmailAddress, Subject
+| sort by Timestamp asc
+
+//Peter’s recipients, timestamps, and subjects
+EmailEvent
+| where SenderFromAddress == "peter.white@wheelsanddeals24.com"
+| project Timestamp, RecipientEmailAddress, Subject, AttachmentCount
+| sort by Timestamp asc
+
+
